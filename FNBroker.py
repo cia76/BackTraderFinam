@@ -17,9 +17,9 @@ from FinamPy import FinamPy
 
 
 class MetaFNBroker(BrokerBase.__class__):
-    def __init__(cls, name, bases, dct):
-        super(MetaFNBroker, cls).__init__(name, bases, dct)  # Инициализируем класс брокера
-        FNStore.BrokerCls = cls  # Регистрируем класс брокера в хранилище Финам
+    def __init__(self, name, bases, dct):
+        super(MetaFNBroker, self).__init__(name, bases, dct)  # Инициализируем класс брокера
+        FNStore.BrokerCls = self  # Регистрируем класс брокера в хранилище Финам
 
 
 class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
@@ -36,6 +36,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         self.provider: FinamPy = self.store.providers[self.provider_name][0]  # Провайдер
         self.client_id = self.store.providers[self.provider_name][1]  # Торговый счет
         self.order_trade_request_id = None  # Код подписки на заявки/сделки по счету
+
         self.notifs = collections.deque()  # Очередь уведомлений брокера о заявках
         self.startingcash = self.cash = 0  # Стартовые и текущие свободные средства по счету
         self.startingvalue = self.value = 0  # Стартовая и текущая стоимость позиций
@@ -142,8 +143,8 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         :return: Заявка BackTrader или None
         """
         for order in self.orders.values():  # Пробегаемся по всем заявкам на бирже
-            if order.info['transaction_id'] == transaction_id:  # Если значение совпадает с номером заявки на бирже
-                return order  # то возвращаем заявкe BackTrader
+            if order.info['transaction_id'] == transaction_id:  # Если нашли совпадение по номеру транзакции
+                return order  # то возвращаем заявку BackTrader
         return None  # иначе, ничего не найдено
 
     def create_order(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, oco=None, parent=None, transmit=True, is_buy=True, **kwargs):
@@ -152,11 +153,27 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             else SellOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, transmit=transmit)  # Заявка на покупку/продажу
         order.addcomminfo(self.getcommissioninfo(data))  # По тикеру выставляем комиссии в заявку. Нужно для исполнения заявки в BackTrader
         order.addinfo(**kwargs)  # Передаем в заявку все дополнительные свойства из брокера
-        board, symbol = self.store.data_name_to_board_symbol(data._name)  # По тикеру получаем биржу и код тикера
-        order.addinfo(board=board, symbol=symbol)  # Код биржи exchange и тикера symbol
+        board, symbol = self.store.data_name_to_board_symbol(data._name)  # По тикеру получаем код площадки и тикер
+        order.addinfo(board=board, symbol=symbol)  # В заявку заносим код площадки board и тикер symbol
+        if order.exectype in (Order.Close, Order.StopTrail, Order.StopTrailLimit, Order.Historical):  # Эти типы заявок не реализованы
+            print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Работа с заявками {order.exectype} не реализована')
+            order.reject(self)  # то отклоняем заявку
+            self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
+            return order  # Возвращаем отклоненную заявку
         si = self.store.get_symbol_info(board, symbol)  # Информация о тикере
         if not si:  # Если тикер не найден
             print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Тикер не найден')
+            order.reject(self)  # то отклоняем заявку
+            self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
+            return order  # Возвращаем отклоненную заявку
+        if order.exectype != Order.Market and not order.price:  # Если цена заявки не указана для всех заявок, кроме рыночной
+            price_type = 'Лимитная' if order.exectype == Order.Limit else 'Стоп'  # Для стоп заявок это будет триггерная (стоп) цена
+            print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. {price_type} цена (price) не указана для заявки типа {order.exectype}')
+            order.reject(self)  # то отклоняем заявку
+            self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
+            return order  # Возвращаем отклоненную заявку
+        if order.exectype == Order.StopLimit and not order.pricelimit:  # Если лимитная цена не указана для стоп-лимитной заявки
+            print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Лимитная цена (pricelimit) не указана для заявки типа {order.exectype}')
             order.reject(self)  # то отклоняем заявку
             self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
             return order  # Возвращаем отклоненную заявку
@@ -187,49 +204,26 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         symbol = order.info['symbol']  # Код тикера
         si = self.store.get_symbol_info(board, symbol)  # Информация о тикере
         quantity = abs(order.size // si.lot_size)  # Размер позиции в лотах. В Финам всегда передается положительный размер лота
-        stop_price = None  # Стоп и лимитную цены получим дальше
-        if order.exectype in (Order.Stop, Order.StopLimit):  # Для стоп/стоп-лимитных заявок
-            if not order.price:  # Если стоп цена не указана
-                print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Стоп цена (price) не указана для заявки типа {order.exectype}')
-                order.reject(self)  # то отклоняем заявку
-                self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
-                return order  # Возвращаем отклоненную заявку
-            stop_price = order.price  # получаем стоп цену
         if order.exectype == Order.Market:  # Рыночная заявка
             response = self.provider.new_order(self.client_id, board, symbol, buy_sell, quantity)
             order.addinfo(transaction_id=response.transaction_id)  # Идентификатор транзакции добавляем в заявку
         elif order.exectype == Order.Limit:  # Лимитная заявка
-            if not order.price:  # Если цена не указана
-                print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Лимитная цена (price) не указана для заявки типа {order.exectype}')
-                order.reject(self)  # то отклоняем заявку
-                self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
-                return order  # Возвращаем отклоненную заявку
             response = self.provider.new_order(self.client_id, board, symbol, buy_sell, quantity, price=order.price)
             order.addinfo(transaction_id=response.transaction_id)  # Идентификатор транзакции добавляем в заявку
         elif order.exectype == Order.Stop:  # Стоп заявка
             response = self.provider.new_stop(self.client_id, board, symbol, buy_sell,
-                                              StopLoss(activation_price=stop_price, market_price=False, price=stop_price,
+                                              StopLoss(activation_price=order.price, market_price=True,
                                                        quantity=StopQuantity(units=StopQuantityUnits.STOP_QUANTITY_UNITS_LOTS, value=quantity),
                                                        use_credit=False),
                                               valid_before=OrderValidBefore(type=OrderValidBeforeType.ORDER_VALID_BEFORE_TYPE_TILL_CANCELLED))
             order.addinfo(stop_id=response.stop_id)  # Идентификатор стоп заявки добавляем в заявку
         elif order.exectype == Order.StopLimit:  # Стоп-лимитная заявка
-            if not order.pricelimit:  # Если цена не указана
-                print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Лимитная цена (pricelimit) не указана для заявки типа {order.exectype}')
-                order.reject(self)  # то отклоняем заявку
-                self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
-                return order  # Возвращаем отклоненную заявку
             response = self.provider.new_stop(self.client_id, board, symbol, buy_sell, None,
-                                              TakeProfit(activation_price=stop_price, market_price=True,
-                                                         quantity=StopQuantity(units=StopQuantityUnits.STOP_QUANTITY_UNITS_LOTS, value=quantity),
-                                                         use_credit=False),
+                                              StopLoss(activation_price=order.price, market_price=False, price=order.pricelimit,
+                                                       quantity=StopQuantity(units=StopQuantityUnits.STOP_QUANTITY_UNITS_LOTS, value=quantity),
+                                                       use_credit=False),
                                               valid_before=OrderValidBefore(type=OrderValidBeforeType.ORDER_VALID_BEFORE_TYPE_TILL_CANCELLED))
             order.addinfo(stop_id=response.stop_id)  # Идентификатор стоп заявки добавляем в заявку
-        else:  # Close, StopTrail, StopTrailLimit, Historical заявки не реализованы
-            print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Работа с заявками {order.exectype} не реализована')
-            order.reject(self)  # то отклоняем заявку
-            self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
-            return order  # Возвращаем отклоненную заявку
         order.submit(self)  # Отправляем заявку на биржу (Order.Submitted)
         self.notifs.append(order.clone())  # Уведомляем брокера об отправке заявки на биржу
         order.accept(self)  # Заявка принята на бирже (Order.Accepted)
