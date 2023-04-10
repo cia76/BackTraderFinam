@@ -50,8 +50,10 @@ class FNStore(with_metaclass(MetaSingleton, object)):
         """Возвращает новый экземпляр класса брокера с заданными параметрами"""
         return cls.BrokerCls(*args, **kwargs)
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super(FNStore, self).__init__()
+        if 'providers' in kwargs:  # Если хранилище создаем из данных/брокера (не рекомендуется)
+            self.p.providers = kwargs['providers']  # то список провайдеров берем из переданного ключа providers
         self.notifs = collections.deque()  # Уведомления хранилища
         self.providers = {}  # Справочник провайдеров
         for provider in self.p.providers:  # Пробегаемся по всем провайдерам
@@ -90,7 +92,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
         """
         try:  # Пробуем
             return next(item for item in self.symbols.securities if item.board == board and item.code == symbol)  # вернуть значение из справочника
-        except:  # Если тикер не найден
+        except StopIteration:  # Если тикер не найден
             print(f'Информация о {board}.{symbol} не найдена')
             return None  # то возвращаем пустое значение
 
@@ -103,7 +105,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
             symbol = dataname  # Код тикера
             try:  # Пробуем по тикеру получить площадку
                 board = next(item.board for item in self.symbols.securities if item.code == symbol)  # Получаем код площадки первого совпадающего тикера
-            except:  # Если площадка не найдена
+            except StopIteration:  # Если площадка не найдена
                 board = None  # то возвращаем пустое значение
         return board, symbol  # Возвращаем код площадки и код тикера
 
