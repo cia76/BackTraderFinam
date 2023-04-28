@@ -60,7 +60,6 @@ class FNStore(with_metaclass(MetaSingleton, object)):
             provider_name = provider['provider_name'] if 'provider_name' in provider else 'default'  # Название провайдера или название по умолчанию
             self.providers[provider_name] = (FinamPy(provider['access_token']), provider['client_id'])  # Работа с сервером TRANSAQ из Python через REST/gRPC https://finamweb.github.io/trade-api-docs/ с токеном по счету
         self.provider = list(self.providers.values())[0][0]  # Провайдер по умолчанию (первый) для работы со справочниками
-        self.symbols = self.provider.get_securities()  # Получаем справочник тикеров (занимает несколько секунд)
         self.new_bars = []  # Новые бары по всем подпискам на тикеры из Финам
 
     def start(self):
@@ -79,42 +78,4 @@ class FNStore(with_metaclass(MetaSingleton, object)):
     def stop(self):
         for provider in self.providers.values():  # Пробегаемся по всем значениям провайдеров
             # provider.on_new_bar = provider.default_handler  # Возвращаем обработчик по умолчанию
-            provider[0].close_subscriptions_thread()  # Закрываем поток подписок перед выходом
-
-    # Функции
-
-    def get_symbol_info(self, board, symbol):
-        """Получение информации тикера
-
-        :param str board: Код площадки
-        :param str symbol: Тикер
-        :return: Значение из кэша или None, если тикер не найден
-        """
-        try:  # Пробуем
-            return next(item for item in self.symbols.securities if item.board == board and item.code == symbol)  # вернуть значение из справочника
-        except StopIteration:  # Если тикер не найден
-            print(f'Информация о {board}.{symbol} не найдена')
-            return None  # то возвращаем пустое значение
-
-    def data_name_to_board_symbol(self, dataname):
-        symbol_parts = dataname.split('.')  # По разделителю пытаемся разбить тикер на части
-        if len(symbol_parts) >= 2:  # Если тикер задан в формате <Код площадки>.<Код тикера>
-            board = symbol_parts[0]  # Код площадки
-            symbol = '.'.join(symbol_parts[1:])  # Код тикера
-        else:  # Если тикер задан без площадки
-            symbol = dataname  # Код тикера
-            try:  # Пробуем по тикеру получить площадку
-                board = next(item.board for item in self.symbols.securities if item.code == symbol)  # Получаем код площадки первого совпадающего тикера
-            except StopIteration:  # Если площадка не найдена
-                board = None  # то возвращаем пустое значение
-        return board, symbol  # Возвращаем код площадки и код тикера
-
-    @staticmethod
-    def board_symbol_to_data_name(board, symbol):
-        """Название тикера из кода площадки и кода тикера
-
-        :param str board: Код площадки
-        :param str symbol: Тикер
-        :return: Название тикера
-        """
-        return f'{board}.{symbol}'
+            provider[0].close_channel()  # Закрываем канал перед выходом

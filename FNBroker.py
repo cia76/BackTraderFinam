@@ -10,8 +10,8 @@ from BackTraderFinam import FNStore
 
 from FinamPy.proto.tradeapi.v1.common_pb2 import BUY_SELL_BUY, BUY_SELL_SELL, OrderValidBefore, OrderValidBeforeType
 from FinamPy.proto.tradeapi.v1.orders_pb2 import OrderStatus
-from FinamPy.proto.tradeapi.v1.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits, TakeProfit
-from FinamPy.proto.tradeapi.v1.events_pb2 import OrderEvent, TradeEvent, PortfolioEvent
+from FinamPy.proto.tradeapi.v1.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits
+from FinamPy.proto.tradeapi.v1.events_pb2 import OrderEvent
 
 from FinamPy import FinamPy
 
@@ -73,12 +73,12 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             response = self.provider.get_portfolio(self.client_id)  # Портфель по счету
             if datas is not None:  # Если получаем по тикерам
                 for data in datas:  # Пробегаемся по всем тикерам
-                    board, symbol = self.store.data_name_to_board_symbol(data._name)  # По тикеру получаем площадку и код тикера
+                    board, symbol = self.provider.data_name_to_board_symbol(data._name)  # По тикеру получаем площадку и код тикера
                     try:  # Пытаемся
                         position = next(item for item in response.positions if item.security_code == symbol)  # получить позицию
                         cross_rate = next(item.cross_rate for item in response.currencies if item.name == position.currency)  # Кол-во рублей за единицу валюты
                         value += position.equity * cross_rate
-                    except:  # Если позиция не найдена
+                    except StopIteration:  # Если позиция не найдена
                         pass  # то переходим к следующему тикеру
             else:  # Если получаем по счету
                 value = response.equity  # то берем текущую оценку в рублях
@@ -130,10 +130,10 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         """Все активные позиции по счету"""
         response = self.provider.get_portfolio(self.client_id)  # Портфель по счету
         for position in response.positions:  # Пробегаемся по всем активным позициям счета
-            si = next(item for item in self.store.symbols.securities if item.market == position.market and item.code == position.security_code)  # Поиск тикера по рынку
+            si = next(item for item in self.provider.symbols.securities if item.market == position.market and item.code == position.security_code)  # Поиск тикера по рынку
             cross_rate = next(item.cross_rate for item in response.currencies if item.name == position.currency)  # Кол-во рублей за единицу валюты
             price = position.average_price * cross_rate
-            dataname = self.store.board_symbol_to_data_name(si.board, si.code)  # Название тикера
+            dataname = self.provider.board_symbol_to_data_name(si.board, si.code)  # Название тикера
             self.positions[dataname] = Position(position.balance, price)  # Сохраняем в списке открытых позиций
 
     def get_order(self, transaction_id) -> Union[Order, None]:
@@ -147,20 +147,20 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
                 return order  # то возвращаем заявку BackTrader
         return None  # иначе, ничего не найдено
 
-    def create_order(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, oco=None, parent=None, transmit=True, is_buy=True, **kwargs):
+    def create_order(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, oco=None, parent=None, transmit=True, simulated=False, is_buy=True, **kwargs):
         """Создание заявки. Привязка параметров счета и тикера. Обработка связанных и родительской/дочерних заявок"""
-        order = BuyOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, transmit=transmit) if is_buy \
-            else SellOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, transmit=transmit)  # Заявка на покупку/продажу
+        order = BuyOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, simulated=simulated, transmit=transmit) if is_buy \
+            else SellOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, simulated=simulated, transmit=transmit)  # Заявка на покупку/продажу
         order.addcomminfo(self.getcommissioninfo(data))  # По тикеру выставляем комиссии в заявку. Нужно для исполнения заявки в BackTrader
         order.addinfo(**kwargs)  # Передаем в заявку все дополнительные свойства из брокера
-        board, symbol = self.store.data_name_to_board_symbol(data._name)  # По тикеру получаем код площадки и тикер
+        board, symbol = self.provider.data_name_to_board_symbol(data._name)  # По тикеру получаем код площадки и тикер
         order.addinfo(board=board, symbol=symbol)  # В заявку заносим код площадки board и тикер symbol
         if order.exectype in (Order.Close, Order.StopTrail, Order.StopTrailLimit, Order.Historical):  # Эти типы заявок не реализованы
             print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Работа с заявками {order.exectype} не реализована')
             order.reject(self)  # то отклоняем заявку
             self.oco_pc_check(order)  # Проверяем связанные и родительскую/дочерние заявки
             return order  # Возвращаем отклоненную заявку
-        si = self.store.get_symbol_info(board, symbol)  # Информация о тикере
+        si = self.provider.get_symbol_info(board, symbol)  # Информация о тикере
         if not si:  # Если тикер не найден
             print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Тикер не найден')
             order.reject(self)  # то отклоняем заявку
@@ -202,7 +202,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         buy_sell = BUY_SELL_BUY if order.isbuy() else BUY_SELL_SELL  # Покупка/продажа
         board = order.info['board']  # Код биржи
         symbol = order.info['symbol']  # Код тикера
-        si = self.store.get_symbol_info(board, symbol)  # Информация о тикере
+        si = self.provider.get_symbol_info(board, symbol)  # Информация о тикере
         quantity = abs(order.size // si.lot_size)  # Размер позиции в лотах. В Финам всегда передается положительный размер лота
         if order.exectype == Order.Market:  # Рыночная заявка
             response = self.provider.new_order(self.client_id, board, symbol, buy_sell, quantity)
@@ -285,7 +285,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             pos = self.getposition(order.data)  # Получаем позицию по тикеру или нулевую позицию если тикера в списке позиций нет
             board = order.info['board']  # Код биржи
             symbol = order.info['symbol']  # Код тикера
-            si = self.store.get_symbol_info(board, symbol)  # Информация о тикере
+            si = self.provider.get_symbol_info(board, symbol)  # Информация о тикере
             size = event.quantity * si.lot_size  # Кол-во в штуках
             if event.buy_sell == BUY_SELL_SELL:  # Если сделка на продажу
                 size *= -1  # то кол-во ставим отрицательным
