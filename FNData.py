@@ -30,7 +30,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         self.store = FNStore(**kwargs)  # Передаем параметры в хранилище Финам. Может работать самостоятельно, не через хранилище
         self.provider_name = self.p.provider_name if self.p.provider_name else list(self.store.providers.keys())[0]  # Название провайдера, или первое название по ключу name
         self.provider: FinamPy = self.store.providers[self.provider_name]  # Провайдер
-        self.board, self.symbol = self.provider.data_name_to_board_symbol(self.p.dataname)  # По тикеру получаем биржу и код тикера
+        self.board, self.symbol = self.provider.dataname_to_board_symbol(self.p.dataname)  # По тикеру получаем биржу и код тикера
         # TODO Все остальные переменные
 
     def setenvironment(self, env):

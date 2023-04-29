@@ -73,7 +73,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             response = self.provider.get_portfolio(self.client_id)  # Портфель по счету
             if datas is not None:  # Если получаем по тикерам
                 for data in datas:  # Пробегаемся по всем тикерам
-                    board, symbol = self.provider.data_name_to_board_symbol(data._name)  # По тикеру получаем площадку и код тикера
+                    board, symbol = self.provider.dataname_to_board_symbol(data._name)  # По тикеру получаем площадку и код тикера
                     try:  # Пытаемся
                         position = next(item for item in response.positions if item.security_code == symbol)  # получить позицию
                         cross_rate = next(item.cross_rate for item in response.currencies if item.name == position.currency)  # Кол-во рублей за единицу валюты
@@ -133,7 +133,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             si = next(item for item in self.provider.symbols.securities if item.market == position.market and item.code == position.security_code)  # Поиск тикера по рынку
             cross_rate = next(item.cross_rate for item in response.currencies if item.name == position.currency)  # Кол-во рублей за единицу валюты
             price = position.average_price * cross_rate
-            dataname = self.provider.board_symbol_to_data_name(si.board, si.code)  # Название тикера
+            dataname = self.provider.board_symbol_to_dataname(si.board, si.code)  # Название тикера
             self.positions[dataname] = Position(position.balance, price)  # Сохраняем в списке открытых позиций
 
     def get_order(self, transaction_id) -> Union[Order, None]:
@@ -153,7 +153,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             else SellOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, simulated=simulated, transmit=transmit)  # Заявка на покупку/продажу
         order.addcomminfo(self.getcommissioninfo(data))  # По тикеру выставляем комиссии в заявку. Нужно для исполнения заявки в BackTrader
         order.addinfo(**kwargs)  # Передаем в заявку все дополнительные свойства из брокера
-        board, symbol = self.provider.data_name_to_board_symbol(data._name)  # По тикеру получаем код площадки и тикер
+        board, symbol = self.provider.dataname_to_board_symbol(data._name)  # По тикеру получаем код площадки и тикер
         order.addinfo(board=board, symbol=symbol)  # В заявку заносим код площадки board и тикер symbol
         if order.exectype in (Order.Close, Order.StopTrail, Order.StopTrailLimit, Order.Historical):  # Эти типы заявок не реализованы
             print(f'Постановка заявки {order.ref} по тикеру {board}.{symbol} отклонена. Работа с заявками {order.exectype} не реализована')
