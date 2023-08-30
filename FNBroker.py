@@ -60,11 +60,14 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         if self.store.BrokerCls:  # Если брокер есть в хранилище
             cash = 0.0  # Будем набирать свободные средства по всем валютам с конвертацией в рубли
             response = self.provider.get_portfolio(self.client_id)  # Портфель по счету
-            for money in response.money:  # Пробегаемся по всем свободным средствам в валютах
-                cross_rate = next(item.cross_rate for item in response.currencies if item.name == money.currency)  # Кол-во рублей за единицу валюты
-                cash += money.balance * cross_rate  # Переводим в рубли и добавляем к свободным средствам
-            self.cash = cash  # Свободные средства по каждому портфелю на каждой бирже
-        return self.cash
+            try:  # Пытаемся получить свободные средства
+                for money in response.money:  # Пробегаемся по всем свободным средствам в валютах
+                    cross_rate = next(item.cross_rate for item in response.currencies if item.name == money.currency)  # Кол-во рублей за единицу валюты
+                    cash += money.balance * cross_rate  # Переводим в рубли и добавляем к свободным средствам
+                self.cash = cash  # Свободные средства по каждому портфелю на каждой бирже
+                return self.cash
+            except AttributeError:  # Если сервер отключен, то свободные средства не придут
+                return 0  # Выдаем пустое значение. Получим свободные средства когда сервер будет работать
 
     def getvalue(self, datas=None):
         """Стоимость позиции, позиций, всех позиций"""
@@ -81,7 +84,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
                     except StopIteration:  # Если позиция не найдена
                         pass  # то переходим к следующему тикеру
             else:  # Если получаем по счету
-                value = response.equity  # то берем текущую оценку в рублях
+                value = response.equity - self.getcash()  # то берем текущую оценку в рублях
             self.value = value  # Стоимость позиций
         return self.value
 
