@@ -1,9 +1,12 @@
 import collections
+from datetime import timedelta
 
 from backtrader.metabase import MetaParams
 from backtrader.utils.py3 import with_metaclass
+from backtrader import TimeFrame
 
 from FinamPy import FinamPy
+from FinamPy.proto.tradeapi.v1.candles_pb2 import DayCandleTimeFrame, IntradayCandleTimeFrame
 
 
 class MetaSingleton(MetaParams):
@@ -60,12 +63,9 @@ class FNStore(with_metaclass(MetaSingleton, object)):
             provider_name = provider['provider_name'] if 'provider_name' in provider else 'default'  # Название провайдера или название по умолчанию
             self.providers[provider_name] = (FinamPy(provider['access_token']), provider['client_id'])  # Работа с сервером TRANSAQ из Python через REST/gRPC https://finamweb.github.io/trade-api-docs/ с токеном по счету
         self.provider = list(self.providers.values())[0][0]  # Провайдер по умолчанию (первый) для работы со справочниками
-        self.new_bars = []  # Новые бары по всем подпискам на тикеры из Финам
 
     def start(self):
-        # for name, provider in self.providers.items():  # Пробегаемся по всем провайдерам
-        #     provider.on_new_bar = lambda response,  n=name: self.new_bars.append(dict(provider_name=n, response=response))  # Обработчик новых баров по подписке из Финам
-        pass  # TODO Ждем реализацию подписки на новые бары от Финама
+        pass  # Когда Финам сделает подписку на новые бары, то сделать по аналогии с Алором
 
     def put_notification(self, msg, *args, **kwargs):
         self.notifs.append((msg, args, kwargs))
@@ -77,5 +77,54 @@ class FNStore(with_metaclass(MetaSingleton, object)):
 
     def stop(self):
         for provider in self.providers.values():  # Пробегаемся по всем значениям провайдеров
-            # provider.on_new_bar = provider.default_handler  # Возвращаем обработчик по умолчанию
             provider[0].close_channel()  # Закрываем канал перед выходом
+
+    # Функции конвертации
+
+    @staticmethod
+    def is_intraday(timeframe) -> bool:
+        """Является ли заданный временной интервал внутридневным
+
+        :param TimeFrame timeframe: Временной интервал
+        :return: Является ли заданный временной интервал внутридневным
+        """
+        return timeframe == TimeFrame.Minutes
+
+    @staticmethod
+    def timeframe_to_finam_timeframe(timeframe, compression):
+        """Перевод временнОго интервала во временной интервал Финам
+
+        :param TimeFrame timeframe: Временной интервал
+        :param int compression: Размер временнОго интервала
+        :return: Временной интервал Финам
+        """
+        if timeframe == TimeFrame.Days:  # Дневной временной интервал (по умолчанию)
+            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_D1
+        elif timeframe == TimeFrame.Weeks:  # Недельный временной интервал
+            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_W1
+        elif timeframe == TimeFrame.Minutes:  # Минутный временной интервал
+            if compression == 60:  # Часовой временной интервал
+                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_H1
+            elif compression == 15:  # 15-и минутный временной интервал
+                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M15
+            elif compression == 5:  # 5-и минутный временной интервал
+                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M5
+            elif compression == 1:  # 1 минутный временной интервал
+                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M1
+        else:  # В остальных случаях
+            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_D1  # возвращаем значение по умолчанию
+
+    @staticmethod
+    def timeframe_to_timedelta(timeframe, compression) -> timedelta:
+        """Перевод временнОго интервала в разницу во времени
+
+        :param TimeFrame timeframe: Временной интервал
+        :param int compression: Размер временнОго интервала
+        :return: Разница во времени
+        """
+        if timeframe == TimeFrame.Days:  # Дневной временной интервал (по умолчанию)
+            return timedelta(days=1)
+        elif timeframe == TimeFrame.Weeks:  # Недельный временной интервал
+            return timedelta(weeks=1)
+        elif timeframe == TimeFrame.Minutes:  # Минутный временной интервал
+            return timedelta(minutes=compression)  # 1, 5, 15 минут, 1 час
