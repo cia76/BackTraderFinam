@@ -230,7 +230,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         order.submit(self)  # Отправляем заявку на биржу (Order.Submitted)
         self.notifs.append(order.clone())  # Уведомляем брокера об отправке заявки на биржу
         order.accept(self)  # Заявка принята на бирже (Order.Accepted)
-        self.orders[order.ref] = order  # Сохраняем в списке заявок, отправленных на биржу
+        self.orders[order.ref] = order  # Сохраняем заявку в списке заявок, отправленных на биржу
         return order  # Возвращаем заявку
 
     def cancel_order(self, order):
