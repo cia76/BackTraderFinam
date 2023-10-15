@@ -117,36 +117,36 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             todate_utc = self.provider.msk_to_utc_datetime(self.p.todate, True) if self.intraday else self.p.todate.replace(tzinfo=timezone.utc)  # то для интрадея переводим ее в UTC, иначе, берем дату без изменения
         else:  # Если дата и время окончания интервала не задана
             todate_utc = datetime.utcnow().replace(tzinfo=timezone.utc)  # то берем текущую дату и время UTC
+        td = timedelta(days=30) if self.intraday else timedelta(days=365)  # Внутри дня максимальный запрос за 30 дней. Для дней и выше - 365 дней
+        from_ = getattr(interval, 'from')  # Т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
+        to_ = getattr(interval, 'to')  # Аналогично будем работать с атрибутом to для единообразия
         while True:  # Будем получать бары пока не получим все
-            td = timedelta(days=30) if self.intraday else timedelta(days=365)  # Внутри дня максимальный запрос за 30 дней. Для дней и выше - 365 дней
-            todate_min_utc = min(todate_utc, fromdate_utc + td)  # Максимум, можем делать запросы за 365 дней
-            from_ = getattr(interval, 'from')  # Т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
-            to_ = getattr(interval, 'to')  # Аналогично будем работать с атрибутом to для единообразия
+            todate_min_utc = min(todate_utc, fromdate_utc + td)  # До какой даты можем делать запрос
             if self.intraday:  # Для интрадея datetime -> Timestamp
-                from_.seconds = Timestamp(seconds=int(fromdate_utc.timestamp())).seconds
-                to_.seconds = Timestamp(seconds=int(todate_min_utc.timestamp())).seconds
+                from_.seconds = Timestamp(seconds=int(fromdate_utc.timestamp())).seconds  # Дата и время начала интервала UTC
+                to_.seconds = Timestamp(seconds=int(todate_min_utc.timestamp())).seconds  # Дата и время окончания интервала UTC
             else:  # Для дневных интервалов и выше datetime -> Date
-                date_from = Date(year=fromdate_utc.year, month=fromdate_utc.month, day=fromdate_utc.day)
+                date_from = Date(year=fromdate_utc.year, month=fromdate_utc.month, day=fromdate_utc.day)  # Дата начала интервала UTC
                 from_.year = date_from.year
                 from_.month = date_from.month
                 from_.day = date_from.day
-                date_to = Date(year=todate_min_utc.year, month=todate_min_utc.month, day=todate_min_utc.day)
+                date_to = Date(year=todate_min_utc.year, month=todate_min_utc.month, day=todate_min_utc.day)  # Дата окончания интервала UTC
                 to_.year = date_to.year
                 to_.month = date_to.month
                 to_.day = date_to.day
-            print(fromdate_utc, todate_min_utc)  # Для отладки
             history_bars = MessageToDict(self.provider.get_intraday_candles(self.board, self.symbol, self.timeframe, interval) if self.intraday else
                                          self.provider.get_day_candles(self.board, self.symbol, self.timeframe, interval),
                                          including_default_value_fields=True)['candles']  # Получаем бары, переводим в словарь/список
             if len(history_bars) == 0:  # Если новых бар нет
-                fromdate_utc = todate_min_utc + timedelta(minutes=1) if self.intraday else todate_min_utc + timedelta(days=1)  # то начало интервала смещаем на возможный следующий бар по UTC
-            else:  # Если получили новые бары
-                last_bar_utc = self.provider.msk_to_utc_datetime(self.get_bar_open_date_time(history_bars[-1]), True)  # Дата и время открытия последнего бара по UTC
-                fromdate_utc = last_bar_utc + timedelta(minutes=1) if self.intraday else last_bar_utc + timedelta(days=1)  # Смещаем время на возможный следующий бар по UTC
+                fromdate_utc = todate_min_utc + timedelta(minutes=1) if self.intraday else todate_min_utc + timedelta(days=1)  # то смещаем время на возможный следующий бар UTC
+            else:  # Если пришли новые бары
                 for bar in history_bars:  # Пробегаемся по всем полученным барам
                     if self.is_bar_valid(bar):  # Если исторический бар соответствует всем условиям выборки
                         self.history_bars.append(bar)  # то добавляем бар
-            if fromdate_utc >= todate_utc:  # Если задана дата окончания интервала, и она не позже даты начала
+                last_bar_open_dt = self.get_bar_open_date_time(history_bars[-1])  # Дата и время открытия последнего бара
+                last_bar_open_utc = self.provider.msk_to_utc_datetime(last_bar_open_dt, True) if self.intraday else last_bar_open_dt.replace(tzinfo=timezone.utc)  # Дата и время открытия последнего бара UTC
+                fromdate_utc = last_bar_open_utc + timedelta(minutes=1) if self.intraday else last_bar_open_utc + timedelta(days=1)  # Смещаем время на возможный следующий бар UTC
+            if fromdate_utc > todate_utc:  # Если пройден весь интервал
                 break  # то выходим из цикла получения баров
 
     # Расписание
@@ -155,23 +155,23 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         """Поток получения новых бар по расписанию биржи"""
         time_frame = self.store.timeframe_to_timedelta(self.p.timeframe, self.p.compression)  # Разница во времени между барами
         interval = IntradayCandleInterval(count=1) if self.intraday else DayCandleInterval(count=1)  # Принимаем последний завершенный бар
+        from_ = getattr(interval, 'from')  # т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         while True:
-            market_datetime_now = self.p.schedule.utc_to_msk_datetime(datetime.utcnow())  # Текущее время на бирже
-            trade_bar_open_datetime = self.p.schedule.get_trade_bar_open_datetime(market_datetime_now, time_frame)  # Дата и время бара, который будем получать
-            trade_bar_request_datetime = self.p.schedule.get_trade_bar_request_datetime(trade_bar_open_datetime, time_frame)  # Дата и время запроса бара на бирже
-            sleep_time_secs = (trade_bar_request_datetime - market_datetime_now + self.p.schedule.delta).total_seconds()  # Время ожидания в секундах
+            market_dt_now = self.p.schedule.utc_to_msk_datetime(datetime.utcnow())  # Текущее время на бирже
+            trade_bar_open_dt = self.p.schedule.get_trade_bar_open_datetime(market_dt_now, time_frame)  # Дата и время бара, который будем получать
+            trade_bar_request_dt = self.p.schedule.get_trade_bar_request_datetime(trade_bar_open_dt, time_frame)  # Дата и время запроса бара на бирже
+            sleep_time_secs = (trade_bar_request_dt - market_dt_now + self.p.schedule.delta).total_seconds()  # Время ожидания в секундах
             exit_event_set = self.exit_event.wait(sleep_time_secs)  # Ждем нового бара или события выхода из потока
             if exit_event_set:  # Если произошло событие выхода из потока
                 self.provider.close_channel()  # Закрываем канал перед выходом
                 return  # Выходим из потока, дальше не продолжаем
-            trade_bar_open_datetime_utc = self.p.schedule.msk_to_utc_datetime(trade_bar_open_datetime)  # Дата и время бара в UTC
-            from_ = getattr(interval, 'from')  # т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
             if self.intraday:  # Для интрадея datetime -> Timestamp
-                seconds_from = self.p.schedule.msk_datetime_to_utc_timestamp(trade_bar_open_datetime)  # Дата и время бара в timestamp UTC
-                date_from = Timestamp(seconds=seconds_from)  # Дата и время бара в Google Timestamp UTC
+                seconds_from = self.p.schedule.msk_datetime_to_utc_timestamp(trade_bar_open_dt)  # Дата и время бара в timestamp UTC
+                date_from = Timestamp(seconds=seconds_from)  # Дата и время начала интервала UTC
                 from_.seconds = date_from.seconds
             else:  # Для дневных интервалов и выше datetime -> Date
-                date_from = Date(year=trade_bar_open_datetime_utc.year, month=trade_bar_open_datetime_utc.month, day=trade_bar_open_datetime_utc.day)
+                trade_bar_open_dt_utc = self.p.schedule.msk_to_utc_datetime(trade_bar_open_dt)  # Дата и время бара UTC
+                date_from = Date(year=trade_bar_open_dt_utc.year, month=trade_bar_open_dt_utc.month, day=trade_bar_open_dt_utc.day)  # Дата начала интервала UTC
                 from_.year = date_from.year
                 from_.month = date_from.month
                 from_.day = date_from.day
@@ -232,4 +232,5 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
 
     def get_finam_date_time_now(self) -> datetime:
         """Текущая дата и время МСК"""
-        return datetime.now(self.provider.tz_msk).replace(tzinfo=None)  # TODO Нужно получить текущее дату и время с Финама, когда появится в API
+        # TODO Получить текущее дату и время с Финама, когда появится в API
+        return datetime.now(self.provider.tz_msk).replace(tzinfo=None)
