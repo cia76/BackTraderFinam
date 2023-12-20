@@ -134,9 +134,13 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 to_.year = date_to.year
                 to_.month = date_to.month
                 to_.day = date_to.day
-            history_bars = MessageToDict(self.provider.get_intraday_candles(self.board, self.symbol, self.timeframe, interval) if self.intraday else
-                                         self.provider.get_day_candles(self.board, self.symbol, self.timeframe, interval),
-                                         including_default_value_fields=True)['candles']  # Получаем бары, переводим в словарь/список
+            history_bars = []  # Будем получать историю
+            try:  # При запросе истории Финам может выдать ошибку
+                history_bars = MessageToDict(self.provider.get_intraday_candles(self.board, self.symbol, self.timeframe, interval) if self.intraday else
+                                             self.provider.get_day_candles(self.board, self.symbol, self.timeframe, interval),
+                                             including_default_value_fields=True)['candles']  # Получаем бары, переводим в словарь/список
+            except Exception as e:  # При получении ошибки
+                print(f'Ошибка: {e}')  # выводим ее в консоль
             if len(history_bars) == 0:  # Если новых бар нет
                 fromdate_utc = todate_min_utc + timedelta(minutes=1) if self.intraday else todate_min_utc + timedelta(days=1)  # то смещаем время на возможный следующий бар UTC
             else:  # Если пришли новые бары
@@ -175,9 +179,13 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 from_.year = date_from.year
                 from_.month = date_from.month
                 from_.day = date_from.day
-            bars = MessageToDict(self.provider.get_intraday_candles(self.board, self.symbol, self.timeframe, interval) if self.intraday else
-                                 self.provider.get_day_candles(self.board, self.symbol, self.timeframe, interval),
-                                 including_default_value_fields=True)['candles']  # Получаем бары, переводим в словарь/список
+            bars = []  # Будем получать историю
+            try:  # При запросе истории Финам может выдать ошибку
+                bars = MessageToDict(self.provider.get_intraday_candles(self.board, self.symbol, self.timeframe, interval) if self.intraday else
+                                     self.provider.get_day_candles(self.board, self.symbol, self.timeframe, interval),
+                                     including_default_value_fields=True)['candles']  # Получаем бары, переводим в словарь/список
+            except Exception as e:  # При получении ошибки
+                print(f'Ошибка: {e}')  # выводим ее в консоль
             if len(bars) == 0:  # Если новых бар нет
                 continue  # Будем получать следующий бар
             self.new_bars.append(bars[0])  # Получаем первый (завершенный) бар
