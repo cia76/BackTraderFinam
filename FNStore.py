@@ -1,12 +1,10 @@
 import collections
-from datetime import timedelta
+import logging
 
 from backtrader.metabase import MetaParams
 from backtrader.utils.py3 import with_metaclass
-from backtrader import TimeFrame
 
 from FinamPy import FinamPy
-from FinamPy.proto.tradeapi.v1.candles_pb2 import DayCandleTimeFrame, IntradayCandleTimeFrame
 
 
 class MetaSingleton(MetaParams):
@@ -39,6 +37,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
     params = (
         ('providers', None),  # Список провайдеров счетов в виде словаря
     )
+    logger = logging.getLogger('FNStore')  # Будем вести лог
 
     BrokerCls = None  # Класс брокера будет задан из брокера
     DataCls = None  # Класс данных будет задан из данных
@@ -56,16 +55,19 @@ class FNStore(with_metaclass(MetaSingleton, object)):
     def __init__(self, **kwargs):
         super(FNStore, self).__init__()
         if 'providers' in kwargs:  # Если хранилище создаем из данных/брокера (не рекомендуется)
+            self.logger.warning('Хранилище создано из данных/брокера. Рекомендуется сначала создать хранилище, а из него создавать данные/брокера')
             self.p.providers = kwargs['providers']  # то список провайдеров берем из переданного ключа providers
         self.notifs = collections.deque()  # Уведомления хранилища
         self.providers = {}  # Справочник провайдеров
         for provider in self.p.providers:  # Пробегаемся по всем провайдерам
             provider_name = provider['provider_name'] if 'provider_name' in provider else 'default'  # Название провайдера или название по умолчанию
             self.providers[provider_name] = (FinamPy(provider['access_token']), provider['client_id'])  # Работа с сервером TRANSAQ из Python через REST/gRPC https://finamweb.github.io/trade-api-docs/ с токеном по счету
+            self.logger.debug(f'Добавлен провайдер Финам {provider["client_id"]}')
         self.provider = list(self.providers.values())[0][0]  # Провайдер по умолчанию (первый) для работы со справочниками
+        self.new_bars = []  # Новые бары по всем подпискам на тикеры из Финам
 
     def start(self):
-        pass  # Когда Финам сделает подписку на новые бары, то сделать по аналогии с Алором
+        pass  # TODO Ждем от Финама подписку на бары
 
     def put_notification(self, msg, *args, **kwargs):
         self.notifs.append((msg, args, kwargs))
@@ -78,53 +80,3 @@ class FNStore(with_metaclass(MetaSingleton, object)):
     def stop(self):
         for provider in self.providers.values():  # Пробегаемся по всем значениям провайдеров
             provider[0].close_channel()  # Закрываем канал перед выходом
-
-    # Функции конвертации
-
-    @staticmethod
-    def is_intraday(timeframe) -> bool:
-        """Является ли заданный временной интервал внутридневным
-
-        :param TimeFrame timeframe: Временной интервал
-        :return: Является ли заданный временной интервал внутридневным
-        """
-        return timeframe == TimeFrame.Minutes
-
-    @staticmethod
-    def timeframe_to_finam_timeframe(timeframe, compression):
-        """Перевод временнОго интервала во временной интервал Финам
-
-        :param TimeFrame timeframe: Временной интервал
-        :param int compression: Размер временнОго интервала
-        :return: Временной интервал Финам
-        """
-        if timeframe == TimeFrame.Days:  # Дневной временной интервал (по умолчанию)
-            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_D1
-        elif timeframe == TimeFrame.Weeks:  # Недельный временной интервал
-            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_W1
-        elif timeframe == TimeFrame.Minutes:  # Минутный временной интервал
-            if compression == 60:  # Часовой временной интервал
-                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_H1
-            elif compression == 15:  # 15-и минутный временной интервал
-                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M15
-            elif compression == 5:  # 5-и минутный временной интервал
-                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M5
-            elif compression == 1:  # 1 минутный временной интервал
-                return IntradayCandleTimeFrame.INTRADAYCANDLE_TIMEFRAME_M1
-        else:  # В остальных случаях
-            return DayCandleTimeFrame.DAYCANDLE_TIMEFRAME_D1  # возвращаем значение по умолчанию
-
-    @staticmethod
-    def timeframe_to_timedelta(timeframe, compression) -> timedelta:
-        """Перевод временнОго интервала в разницу во времени
-
-        :param TimeFrame timeframe: Временной интервал
-        :param int compression: Размер временнОго интервала
-        :return: Разница во времени
-        """
-        if timeframe == TimeFrame.Days:  # Дневной временной интервал (по умолчанию)
-            return timedelta(days=1)
-        elif timeframe == TimeFrame.Weeks:  # Недельный временной интервал
-            return timedelta(weeks=1)
-        elif timeframe == TimeFrame.Minutes:  # Минутный временной интервал
-            return timedelta(minutes=compression)  # 1, 5, 15 минут, 1 час
