@@ -87,8 +87,9 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # noinspection PyArgumentList
     cerebro.setbroker(broker)  # Устанавливаем брокера
     # data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, live_bars=True)  # TODO Ждем от Финама подписку на бары
-    # data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, schedule=schedule, live_bars=True)  # Исторические и новые минутные бары за все время по расписанию
-    data = store.getdata(dataname=symbol, schedule=schedule, live_bars=True)  # Исторические и новые дневные бары за все время по расписанию
+    data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, schedule=schedule, live_bars=True)  # Исторические и новые минутные бары за все время по расписанию
+    # data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=60, schedule=schedule, live_bars=True)  # Исторические и новые часовые бары за все время по расписанию
+    # data = store.getdata(dataname=symbol, schedule=schedule, live_bars=True)  # Исторические и новые дневные бары за все время по расписанию
     cerebro.adddata(data)  # Добавляем данные
     # cerebro.addsizer(bt.sizers.FixedSize, stake=10)  # Кол-во акций в штуках для покупки/продажи
     cerebro.addsizer(bt.sizers.FixedSize, stake=1)  # Кол-во фьючерсов в штуках для покупки/продажи
