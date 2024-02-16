@@ -240,20 +240,22 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         from_ = getattr(interval, 'from')  # т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         while True:
             market_datetime_now = self.p.schedule.utc_to_msk_datetime(datetime.utcnow())  # Текущее время на бирже
-            trade_bar_open_datetime = self.p.schedule.trade_bar_open_datetime(market_datetime_now, self.tf)  # Дата и время бара, который будем получать
-            trade_bar_request_datetime = self.p.schedule.trade_bar_request_datetime(trade_bar_open_datetime, self.tf)  # Дата и время запроса бара на бирже
+            trade_bar_open_datetime = self.p.schedule.trade_bar_open_datetime(market_datetime_now, self.tf)  # Дата и время открытия бара, который будем получать
+            trade_bar_close_datetime = self.p.schedule.trade_bar_close_datetime(market_datetime_now, self.tf)  # Дата и время закрытия бара, который будем получать
+            trade_bar_request_datetime = self.p.schedule.trade_bar_request_datetime(trade_bar_close_datetime, self.tf)  # Дата и время запроса бара на бирже
             sleep_time_secs = (trade_bar_request_datetime - market_datetime_now).total_seconds()  # Время ожидания в секундах
+            self.logger.debug(f'Получение новых бар с {trade_bar_open_datetime.strftime(self.dt_format)} по расписанию в {trade_bar_request_datetime.strftime(self.dt_format)}. Ожидание {sleep_time_secs} с')
             exit_event_set = self.exit_event.wait(sleep_time_secs)  # Ждем нового бара или события выхода из потока
             if exit_event_set:  # Если произошло событие выхода из потока
                 self.logger.warning('Отмена получения новых бар по расписанию')
                 return  # то выходим из потока, дальше не продолжаем
-            self.logger.debug(f'Получение новых бар по расписанию с {trade_bar_open_datetime.strftime(self.dt_format)}')
+            self.logger.debug(f'Получение новых бар с {trade_bar_open_datetime.strftime(self.dt_format)} по расписанию {trade_bar_request_datetime.strftime(self.dt_format)}')
             if self.intraday:  # Для интрадея datetime -> Timestamp
                 seconds_from = self.p.schedule.msk_datetime_to_utc_timestamp(trade_bar_open_datetime)  # Дата и время бара в timestamp UTC
                 date_from = Timestamp(seconds=seconds_from)  # Дата и время начала интервала UTC
                 from_.seconds = date_from.seconds
             else:  # Для дневных интервалов и выше datetime -> Date
-                trade_bar_open_dt_utc = self.p.schedule.msk_to_utc_datetime(trade_bar_open_datetime)  # Дата и время бара UTC
+                trade_bar_open_dt_utc = trade_bar_open_datetime  # Дата бара передается с нулевым временем. Поэтому, конвертировать в UTC не нужно
                 date_from = Date(year=trade_bar_open_dt_utc.year, month=trade_bar_open_dt_utc.month, day=trade_bar_open_dt_utc.day)  # Дата начала интервала UTC
                 from_.year = date_from.year
                 from_.month = date_from.month

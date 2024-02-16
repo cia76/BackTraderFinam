@@ -63,7 +63,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
             provider_name = provider['provider_name'] if 'provider_name' in provider else 'default'  # Название провайдера или название по умолчанию
             self.providers[provider_name] = (FinamPy(provider['access_token']), provider['client_id'])  # Работа с сервером TRANSAQ из Python через REST/gRPC https://finamweb.github.io/trade-api-docs/ с токеном по счету
             self.logger.debug(f'Добавлен провайдер Финам {provider["client_id"]}')
-        self.provider = list(self.providers.values())[0][0]  # Провайдер по умолчанию (первый) для работы со справочниками
+        self.provider = list(self.providers.values())[0][0]  # Провайдер по умолчанию для работы со справочниками/историей. Первый счет по ключу provider_name
         self.new_bars = []  # Новые бары по всем подпискам на тикеры из Финам
 
     def start(self):
