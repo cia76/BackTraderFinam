@@ -40,24 +40,21 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         self.provider: FinamPy = self.store.providers[self.provider_name][0]  # Провайдер
         self.client_id = self.store.providers[self.provider_name][1]  # Торговый счет
         self.logger.debug(f'Торговый счет {self.client_id}')
-        self.order_trade_request_id = None  # Код подписки на заявки/сделки по счету
         self.notifs = collections.deque()  # Очередь уведомлений брокера о заявках
-        self.startingcash = self.cash = 0  # Стартовые и текущие свободные средства по счету
-        self.startingvalue = self.value = 0  # Стартовая и текущая стоимость позиций
-        self.cash_value = {}  # Справочник Свободные средства/Стоимость позиций
+        self.startingcash = self.cash = self.getcash()  # Стартовые и текущие свободные средства по счету
+        self.startingvalue = self.value = self.getvalue()  # Стартовая и текущая стоимость позиций
         self.positions = collections.defaultdict(Position)  # Список позиций
         self.orders = collections.OrderedDict()  # Список заявок, отправленных на биржу
         self.ocos = {}  # Список связанных заявок (One Cancel Others)
         self.pcs = collections.defaultdict(collections.deque)  # Очередь всех родительских/дочерних заявок (Parent - Children)
 
+        self.provider.on_order = self.on_order  # Обработка заявок
+        self.order_trade_request_id = self.provider.subscribe_order_trade([self.client_id])  # Подписываемся на заявки/позиции по счету
+
     def start(self):
         super(FNBroker, self).start()
-        self.provider.on_order = self.on_order  # Обработка заявок
         if self.p.use_positions:  # Если нужно при запуске брокера получить текущие позиции на бирже
             self.get_all_active_positions()  # то получаем их
-        self.startingcash = self.cash = self.getcash()  # Стартовые и текущие свободные средства по счету
-        self.startingvalue = self.value = self.getvalue()  # Стартовая и текущая стоимость позиций
-        self.order_trade_request_id = self.provider.subscribe_order_trade([self.client_id])  # Подписываемся на заявки/позиции по счету
 
     def getcash(self):
         """Свободные средства по счету"""
