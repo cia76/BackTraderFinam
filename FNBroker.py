@@ -142,14 +142,12 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
 
     def get_order(self, transaction_id) -> Union[Order, None]:
         """Заявка BackTrader по номеру транзакции
+        Пробегаемся по всем заявкам на бирже. Если нашли совпадение по номеру транзакции, то возвращаем заявку BackTrader. Иначе, ничего не найдено
 
         :param int transaction_id: Номер транзакции
         :return: Заявка BackTrader или None
         """
-        for order in self.orders.values():  # Пробегаемся по всем заявкам на бирже
-            if order.info['transaction_id'] == transaction_id:  # Если нашли совпадение по номеру транзакции
-                return order  # то возвращаем заявку BackTrader
-        return None  # иначе, ничего не найдено
+        return next((order for order in self.orders.values() if order.info['transaction_id'] == transaction_id), None)
 
     def create_order(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, oco=None, parent=None, transmit=True, simulated=False, is_buy=True, **kwargs):
         """Создание заявки. Привязка параметров счета и тикера. Обработка связанных и родительской/дочерних заявок"""
