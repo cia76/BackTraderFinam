@@ -61,14 +61,13 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         if self.store.BrokerCls:  # Если брокер есть в хранилище
             cash = 0.0  # Будем набирать свободные средства по всем валютам с конвертацией в рубли
             response = self.provider.get_portfolio(self.client_id)  # Портфель по счету
-            try:  # Пытаемся получить свободные средства
-                for money in response.money:  # Пробегаемся по всем свободным средствам в валютах
-                    cross_rate = next(item.cross_rate for item in response.currencies if item.name == money.currency)  # Кол-во рублей за единицу валюты
-                    cash += money.balance * cross_rate  # Переводим в рубли и добавляем к свободным средствам
-                self.cash = cash  # Свободные средства по каждому портфелю на каждой бирже
-                return self.cash
-            except AttributeError:  # Если сервер отключен, то свободные средства не придут
-                return 0  # Выдаем пустое значение. Получим свободные средства когда сервер будет работать
+            for money in response.money:  # Пробегаемся по всем свободным средствам в валютах
+                cross_rate = next((item.cross_rate for item in response.currencies if item.name == money.currency), None)  # Кол-во рублей за единицу валюты
+                if not cross_rate:  # Если сервер отключен, то свободные средства не придут
+                    return 0  # то выдаем пустое значение. Получим свободные средства когда сервер будет работать
+                cash += money.balance * cross_rate  # Переводим в рубли и добавляем к свободным средствам
+            self.cash = cash  # Свободные средства по каждому портфелю на каждой бирже
+            return self.cash
 
     def getvalue(self, datas=None):
         """Стоимость позиции, позиций, всех позиций"""
@@ -78,12 +77,13 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             if datas is not None:  # Если получаем по тикерам
                 for data in datas:  # Пробегаемся по всем тикерам
                     board, symbol = self.provider.dataname_to_board_symbol(data._name)  # По тикеру получаем площадку и код тикера
-                    try:  # Пытаемся
-                        position = next(item for item in response.positions if item.security_code == symbol)  # получить позицию
-                        cross_rate = next(item.cross_rate for item in response.currencies if item.name == position.currency)  # Кол-во рублей за единицу валюты
-                        value += position.equity * cross_rate
-                    except StopIteration:  # Если позиция не найдена
-                        pass  # то переходим к следующему тикеру
+                    position = next((item for item in response.positions if item.security_code == symbol), None)  # получить позицию
+                    if not position:  # Если позиция не найдена
+                        continue  # то переходим к следующему тикеру
+                    cross_rate = next((item.cross_rate for item in response.currencies if item.name == position.currency), None)  # Кол-во рублей за единицу валюты
+                    if not cross_rate:  # Если сервер отключен, то свободные средства не придут
+                        continue  # то переходим к следующему тикеру
+                    value += position.equity * cross_rate
             else:  # Если получаем по счету
                 value = response.equity - self.getcash()  # то берем текущую оценку в рублях
             self.value = value  # Стоимость позиций
@@ -115,9 +115,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         return self.cancel_order(order)
 
     def get_notification(self):
-        if not self.notifs:  # Если в списке уведомлений ничего нет
-            return None  # то ничего и возвращаем, выходим, дальше не продолжаем
-        return self.notifs.popleft()  # Удаляем и возвращаем крайний левый элемент списка уведомлений
+        return self.notifs.popleft() if self.notifs else None  # Удаляем и возвращаем крайний левый элемент списка уведомлений или ничего
 
     def next(self):
         self.notifs.append(None)  # Добавляем в список уведомлений пустой элемент
