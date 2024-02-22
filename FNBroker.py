@@ -215,17 +215,17 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
             price = self.provider.price_to_finam_price(board, symbol, order.price)  # Лимитная цена
             response = self.provider.new_order(self.client_id, board, symbol, buy_sell, quantity, price=price)
         elif order.exectype == Order.Stop:  # Стоп заявка
-            activation_price = self.provider.price_to_finam_price(board, symbol, order.price)  # Стоп цена
+            price = self.provider.price_to_finam_price(board, symbol, order.price)  # Стоп цена
             response = self.provider.new_stop(self.client_id, board, symbol, buy_sell,
-                                              StopLoss(activation_price=activation_price, market_price=True,
+                                              StopLoss(activation_price=price, market_price=True,
                                                        quantity=StopQuantity(units=StopQuantityUnits.STOP_QUANTITY_UNITS_LOTS, value=quantity),
                                                        use_credit=False),
                                               valid_before=OrderValidBefore(type=OrderValidBeforeType.ORDER_VALID_BEFORE_TYPE_TILL_CANCELLED))
         elif order.exectype == Order.StopLimit:  # Стоп-лимитная заявка
-            activation_price = self.provider.price_to_finam_price(board, symbol, order.price)  # Стоп цена
-            price = self.provider.price_to_finam_price(board, symbol, order.price)  # Лимитная цена
+            price = self.provider.price_to_finam_price(board, symbol, order.price)  # Стоп цена
+            pricelimit = self.provider.price_to_finam_price(board, symbol, order.pricelimit)  # Лимитная цена
             response = self.provider.new_stop(self.client_id, board, symbol, buy_sell, None,
-                                              StopLoss(activation_price=activation_price, market_price=False, price=price,
+                                              StopLoss(activation_price=price, market_price=False, price=pricelimit,
                                                        quantity=StopQuantity(units=StopQuantityUnits.STOP_QUANTITY_UNITS_LOTS, value=quantity),
                                                        use_credit=False),
                                               valid_before=OrderValidBefore(type=OrderValidBeforeType.ORDER_VALID_BEFORE_TYPE_TILL_CANCELLED))
