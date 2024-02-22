@@ -67,7 +67,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
         self.new_bars = []  # Новые бары по всем подпискам на тикеры из Финам
 
     def start(self):
-        pass  # TODO Ждем от Финама подписку на бары
+        pass  # TODO Обработчик новых баров по подписке из Финам
 
     def put_notification(self, msg, *args, **kwargs):
         self.notifs.append((msg, args, kwargs))
@@ -78,5 +78,6 @@ class FNStore(with_metaclass(MetaSingleton, object)):
         return [x for x in iter(self.notifs.popleft, None)]
 
     def stop(self):
+        # TODO Возвращаем обработчик по умолчанию
         for provider in self.providers.values():  # Пробегаемся по всем значениям провайдеров
             provider[0].close_channel()  # Закрываем канал перед выходом
