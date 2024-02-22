@@ -1,5 +1,4 @@
 from datetime import datetime, timezone, timedelta, time
-from time import sleep
 from uuid import uuid4  # Номера расписаний должны быть уникальными во времени и пространстве
 from threading import Thread, Event  # Поток и событие остановки потока получения новых бар по расписанию биржи
 import os.path
@@ -123,7 +122,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
 
     def stop(self):
         super(FNData, self).stop()
-        if self.guid is not None:  # Если была подписка/расписание
+        if self.p.live_bars:  # Если была подписка/расписание
             if self.p.schedule:  # Если получаем новые бары по расписанию
                 self.exit_event.set()  # то отменяем расписание
             else:  # Если получаем новые бары по подписке
@@ -135,10 +134,9 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
 
     def get_bars_from_file(self) -> None:
         """Получение бар из файла"""
-        self.logger.debug(f'Получение бар из файла {self.file_name}')
         if not os.path.isfile(self.file_name):  # Если файл не существует
-            self.logger.warning(f'Файл {self.file_name} не найден и будет создан')
             return  # то выходим, дальше не продолжаем
+        self.logger.debug(f'Получение бар из файла {self.file_name}')
         with open(self.file_name) as file:  # Открываем файл на последовательное чтение
             reader = csv.reader(file, delimiter=self.delimiter)  # Данные в строке разделены табуляцией
             next(reader, None)  # Пропускаем первую строку с заголовками
@@ -166,7 +164,6 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         from_ = getattr(interval, 'from')  # Т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         to_ = getattr(interval, 'to')  # Аналогично будем работать с атрибутом to для единообразия
         first_request = not os.path.isfile(self.file_name)  # Если файл не существует, то первый запрос будем формировать без даты окончания. Так мы в первом запросе получим первые бары истории
-        next_run = datetime.now() + timedelta(minutes=1)  # Время следующего запуска запросов 1 минута с первого запроса
         while True:  # Будем получать бары пока не получим все
             todate_min_utc = min(todate_utc, next_bar_open_utc + td)  # До какой даты можем делать запрос
             if self.intraday:  # Для интрадея datetime -> Timestamp
@@ -190,22 +187,16 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             if first_request:  # Для первого запроса
                 first_request = False  # далее будем ставить в запросы дату окончания интервала
             self.logger.debug(f'Запрос с {next_bar_open_utc} по {todate_min_utc}')
-            while True:  # Будем выполнять запрос пока не выполним успешно
-                response = (self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else
-                            self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval))  # Получаем ответ на запрос бар
-                if not response:  # Если в ответ ничего не получили
-                    sleep_seconds = (next_run - datetime.now()).total_seconds()  # Время ожидания 1 минута с первого запроса
-                    if sleep_seconds <= 0:  # Если вышло время ожидания с первого запроса
-                        sleep_seconds = 60  # то будем ждать 1 минуту с этого запроса
-                    self.logger.warning(f'Достигнут предел кол-ва запросов в минуту. Ждем {sleep_seconds} с до следующей группы запросов...')
-                    sleep(sleep_seconds)  # Ждем минуту с первого запроса
-                    next_run = datetime.now() + timedelta(minutes=1)  # Время следующего запуска запросов 1 минута с текущего запроса
-                else:  # Если в ответ пришли бары
-                    response_dict = MessageToDict(response, including_default_value_fields=True)  # Переводим в словарь из JSON
-                    if 'candles' not in response_dict:  # Если бар нет в словаре
-                        self.logger.error(f'Ошибка при получении бар из истории. {response_dict}')
-                        return  # то выходим, дальше не продолжаем
-                    break  # Выходим
+            response = (self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else
+                        self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval))  # Получаем ответ на запрос бар
+            if not response:  # Если в ответ ничего не получили
+                self.logger.warning('Ошибка запроса бар из истории')
+                return  # то выходим, дальше не продолжаем
+            else:  # Если в ответ пришли бары
+                response_dict = MessageToDict(response, including_default_value_fields=True)  # Переводим в словарь из JSON
+                if 'candles' not in response_dict:  # Если бар нет в словаре
+                    self.logger.error(f'Бар (candles) нет в словаре {response_dict}')
+                    return  # то выходим, дальше не продолжаем
             new_bars_dict = response_dict['candles']  # Получаем все бары из Finam
             if len(new_bars_dict) > 0:  # Если пришли новые бары
                 first_bar_open_dt = self.get_bar_open_date_time(new_bars_dict[0])  # Дату и время первого полученного бара переводим из UTC в МСК
@@ -248,7 +239,6 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             if exit_event_set:  # Если произошло событие выхода из потока
                 self.logger.warning('Отмена получения новых бар по расписанию')
                 return  # то выходим из потока, дальше не продолжаем
-            self.logger.debug(f'Получение новых бар с {trade_bar_open_datetime.strftime(self.dt_format)} по расписанию {trade_bar_request_datetime.strftime(self.dt_format)}')
             if self.intraday:  # Для интрадея datetime -> Timestamp
                 seconds_from = self.p.schedule.msk_datetime_to_utc_timestamp(trade_bar_open_datetime)  # Дата и время бара в timestamp UTC
                 date_from = Timestamp(seconds=seconds_from)  # Дата и время начала интервала UTC
@@ -259,26 +249,22 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 from_.year = date_from.year
                 from_.month = date_from.month
                 from_.day = date_from.day
-            bars = []  # Будем получать историю
-            try:  # При запросе истории Финам может выдать ошибку
-                bars = MessageToDict(self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else
-                                     self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval),
-                                     including_default_value_fields=True)  # Получаем бары, переводим в словарь/список
-            except Exception as e:  # Если получили ошибку
-                self.logger.warning(f'Ошибка при получении истории (stream_bars): {e}')  # то выводим ее в консоль
-            if not bars:  # Если ничего не получили
-                self.logger.warning('По расписанию ничего не получено')
+            response = self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else\
+                self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval)  # Получаем внутридневные или дневные бары
+            if not response:  # Если в ответ ничего не получили
+                self.logger.warning('Ошибка запроса бар из истории по расписанию')
                 continue  # то будем получать следующий бар
-            if 'candles' not in bars:  # Если не получили историю
-                self.logger.warning('По расписанию бары не получены')
+            response_dict = MessageToDict(response, including_default_value_fields=True)  # Получаем бары, переводим в словарь/список
+            if 'candles' not in response_dict:  # Если бар нет в словаре
+                self.logger.warning(f'Бар (candles) нет в истории по расписанию {response_dict}')
                 continue  # то будем получать следующий бар
-            bars = bars['candles']  # Последний сформированный и текущий несформированный (если имеется) бары
+            bars = response_dict['candles']  # Последний сформированный и текущий несформированный (если имеется) бары
             if len(bars) == 0:  # Если бары не получены
-                self.logger.warning('По расписанию новые бары не получены')
+                self.logger.warning('Новые бары по расписанию не получены')
                 continue  # то будем получать следующий бар
             bar = bars[0]  # Получаем первый (завершенный) бар
             self.logger.debug('Получен бар по расписанию')
-            self.store.new_bars.append(dict(guid=self.guid, data=bar))  # Обработчик новых бар по подписке из Финам
+            self.store.new_bars.append(dict(guid=self.guid, data=bar))  # Добавляем в хранилище новых бар
 
     # Функции
 
