@@ -26,7 +26,7 @@ class MetaFNData(AbstractDataBase.__class__):
 class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
     """Данные Финам"""
     params = (
-        ('provider_name', None),  # Название провайдера. Если не задано, то первое название по ключу name
+        ('account_id', 0),  # Порядковый номер счета
         ('four_price_doji', False),  # False - не пропускать дожи 4-х цен, True - пропускать
         ('schedule', None),  # Расписание работы биржи
         ('live_bars', False),  # False - только история, True - история и новые бары
@@ -39,12 +39,13 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         """Если подаем новые бары, то Cerebro не будет запускать preload и runonce, т.к. новые бары должны идти один за другим"""
         return self.p.live_bars
 
-    def __init__(self, **kwargs):
-        self.store = FNStore(**kwargs)  # Передаем параметры в хранилище Финам. Может работать самостоятельно, не через хранилище
-        self.finam_timeframe = self.bt_timeframe_to_finam_timeframe(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader в Финам
-        self.tf = self.bt_timeframe_to_tf(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader для имени файла истории и расписания
+    def __init__(self):
+        self.store = FNStore()  # Хранилище Финам
         self.intraday = self.p.timeframe == TimeFrame.Minutes  # Внутридневной временной интервал
         self.board, self.symbol = self.store.provider.dataname_to_board_symbol(self.p.dataname)  # По тикеру получаем код режима торгов и тикера
+        self.client_id = self.store.provider.client_ids[self.p.account_id]  # Счет тикера
+        self.finam_timeframe = self.bt_timeframe_to_finam_timeframe(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader в Финам
+        self.tf = self.bt_timeframe_to_tf(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader для имени файла истории и расписания
         self.file = f'{self.board}.{self.symbol}_{self.tf}'  # Имя файла истории
         self.logger = logging.getLogger(f'FNData.{self.file}')  # Будем вести лог
         self.file_name = f'{self.datapath}{self.file}.txt'  # Полное имя файла истории
@@ -76,16 +77,16 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
 
     def _load(self):
         """Загрузка бара из истории или нового бара"""
-        if not self.p.live_bars and len(self.history_bars) == 0:  # Если получаем только историю (self.history_bars) и исторических данных нет / все исторические данные получены
+        if len(self.history_bars) > 0:  # Если есть исторические данные
+            bar = self.history_bars.pop(0)  # Берем и удаляем первый бар из хранилища. С ним будем работать
+        elif not self.p.live_bars:  # Если получаем только историю (self.history_bars) и исторических данных нет / все исторические данные получены
             self.put_notification(self.DISCONNECTED)  # Отправляем уведомление об окончании получения исторических бар
             self.logger.debug('Бары из файла/истории отправлены в ТС. Новые бары получать не нужно. Выход')
             return False  # Больше сюда заходить не будем
-        if len(self.history_bars) > 0:  # Если есть исторические данные
-            bar = self.history_bars.pop(0)  # Берем и удаляем первый бар из хранилища. С ним будем работать
         else:  # Если получаем историю и новые бары (self.store.new_bars)
             if len(self.store.new_bars) == 0:  # Если в хранилище никаких новых бар нет
                 return None  # то нового бара нет, будем заходить еще
-            new_bars = [b for b in self.store.new_bars if b['guid'] == self.guid]  # Смотрим в хранилище новых бар бары с guid подписки
+            new_bars = [new_bar for new_bar in self.store.new_bars if new_bar['guid'] == self.guid]  # Смотрим в хранилище новых бар бары с guid подписки
             if len(new_bars) == 0:  # Если новый бар еще не появился
                 self.logger.debug('Новых бар нет')
                 return None  # то нового бара нет, будем заходить еще
@@ -97,7 +98,10 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             new_bar = new_bar['data']  # С данными этого бара будем работать
             dt_open = self.get_bar_open_date_time(new_bar)  # Дата и время открытия бара
             bar = dict(datetime=dt_open,
-                       open=self.get_bar_price(new_bar['open']), high=self.get_bar_price(new_bar['high']), low=self.get_bar_price(new_bar['low']), close=self.get_bar_price(new_bar['close']),
+                       open=self.store.provider.dict_decimal_to_float(new_bar['open']),
+                       high=self.store.provider.dict_decimal_to_float(new_bar['high']),
+                       low=self.store.provider.dict_decimal_to_float(new_bar['low']),
+                       close=self.store.provider.dict_decimal_to_float(new_bar['close']),
                        volume=new_bar['volume'])  # Бар из хранилища новых бар
             if not self.is_bar_valid(bar):  # Если бар не соответствует всем условиям выборки
                 return None  # то пропускаем бар, будем заходить еще
@@ -141,7 +145,8 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             next(reader, None)  # Пропускаем первую строку с заголовками
             for csv_row in reader:  # Последовательно получаем все строки файла
                 bar = dict(datetime=datetime.strptime(csv_row[0], self.dt_format),
-                           open=float(csv_row[1]), high=float(csv_row[2]), low=float(csv_row[3]), close=float(csv_row[4]),
+                           open=float(csv_row[1]), high=float(csv_row[2]), low=float(csv_row[3]),
+                           close=float(csv_row[4]),
                            volume=int(csv_row[5]))  # Бар из файла
                 if self.is_bar_valid(bar):  # Если исторический бар соответствует всем условиям выборки
                     self.history_bars.append(bar)  # то добавляем бар
@@ -203,10 +208,10 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 self.logger.debug(f'Получены бары с {first_bar_open_dt} по {last_bar_open_dt}')
                 for new_bar in new_bars_dict:  # Пробегаемся по всем полученным барам
                     bar = dict(datetime=self.get_bar_open_date_time(new_bar),
-                               open=self.get_bar_price(new_bar['open']),
-                               high=self.get_bar_price(new_bar['high']),
-                               low=self.get_bar_price(new_bar['low']),
-                               close=self.get_bar_price(new_bar['close']),
+                               open=self.store.provider.dict_decimal_to_float(new_bar['open']),
+                               high=self.store.provider.dict_decimal_to_float(new_bar['high']),
+                               low=self.store.provider.dict_decimal_to_float(new_bar['low']),
+                               close=self.store.provider.dict_decimal_to_float(new_bar['close']),
                                volume=new_bar['volume'])
                     if self.is_bar_valid(bar):  # Если исторический бар соответствует всем условиям выборки
                         self.history_bars.append(bar)  # то добавляем бар
@@ -248,7 +253,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 from_.year = date_from.year
                 from_.month = date_from.month
                 from_.day = date_from.day
-            response = self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else\
+            response = self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else \
                 self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval)  # Получаем внутридневные или дневные бары
             if not response:  # Если в ответ ничего не получили
                 self.logger.warning('Ошибка запроса бар из истории по расписанию')
@@ -316,7 +321,8 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         """Дата и время открытия бара. Переводим из GMT в MSK для интрадея. Оставляем в GMT для дневок и выше."""
         # Дату/время UTC получаем в формате ISO 8601. Пример: 2023-06-16T20:01:00Z
         # В статье https://stackoverflow.com/questions/127803/how-do-i-parse-an-iso-8601-formatted-date описывается проблема, что Z на конце нужно убирать
-        return self.store.provider.utc_to_msk_datetime(datetime.fromisoformat(bar['timestamp'][:-1])) if self.intraday else \
+        return self.store.provider.utc_to_msk_datetime(
+            datetime.fromisoformat(bar['timestamp'][:-1])) if self.intraday else \
             datetime(bar['date']['year'], bar['date']['month'], bar['date']['day'])  # Дату/время переводим из UTC в МСК
 
     def get_bar_close_date_time(self, dt_open, period=1) -> datetime:
@@ -343,7 +349,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             self.logger.debug(f'Дата/время открытия бара {dt_open} <= последней даты/времени открытия {self.dt_last_open}')
             return False  # то бар не соответствует условиям выборки
         if self.p.fromdate and dt_open < self.p.fromdate or self.p.todate and dt_open > self.p.todate:  # Если задан диапазон, а бар за его границами
-            self.logger.debug(f'Дата/время открытия бара {dt_open} за границами диапазона {self.p.fromdate} - {self.p.todate}')
+            # self.logger.debug(f'Дата/время открытия бара {dt_open} за границами диапазона {self.p.fromdate} - {self.p.todate}')
             return False  # то бар не соответствует условиям выборки
         if self.p.sessionstart != time.min and dt_open.time() < self.p.sessionstart:  # Если задано время начала сессии и открытие бара до этого времени
             self.logger.debug(f'Дата/время открытия бара {dt_open} до начала торговой сессии {self.p.sessionstart}')
@@ -361,11 +367,6 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             return False  # то бар не соответствует условиям выборки
         self.dt_last_open = dt_open  # Запоминаем дату/время открытия пришедшего бара для будущих сравнений
         return True  # В остальных случаях бар соответствуем условиям выборки
-
-    @staticmethod
-    def get_bar_price(bar_price) -> float:
-        """Цена бара"""
-        return round(int(bar_price['num']) * 10 ** -int(bar_price['scale']), int(bar_price['scale']))
 
     def save_bar_to_file(self, bar) -> None:
         """Сохранение бара в конец файла"""

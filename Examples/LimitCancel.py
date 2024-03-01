@@ -4,7 +4,6 @@ from datetime import datetime
 import backtrader as bt
 
 from BackTraderFinam import FNStore  # Хранилище Finam
-from FinamPy.Config import Config  # Файл конфигурации
 from MarketPy.Schedule import MOEXStocks, MOEXFutures  # Расписания торгов фондового/срочного рынков
 
 
@@ -29,9 +28,9 @@ class LimitCancel(bt.Strategy):
 
     def next(self):
         """Получение следующего исторического/нового бара"""
-        logger.info(f'Получен бар: {self.data._name} - {bt.TimeFrame.Names[self.data.p.timeframe]} {self.data.p.compression} - {bt.num2date(self.data.datetime[0]):%d.%m.%Y %H:%M:%S} - Open = {self.data.open[0]}, High = {self.data.high[0]}, Low = {self.data.low[0]}, Close = {self.data.close[0]}, Volume = {self.data.volume[0]}')
         if not self.live:  # Если не в режиме реальной торговли
             return  # то выходим, дальше не продолжаем
+        logger.info(f'Получен бар: {self.data._name} - {bt.TimeFrame.Names[self.data.p.timeframe]} {self.data.p.compression} - {bt.num2date(self.data.datetime[0]):%d.%m.%Y %H:%M:%S} - Open = {self.data.open[0]}, High = {self.data.high[0]}, Low = {self.data.low[0]}, Close = {self.data.close[0]}, Volume = {self.data.volume[0]}')
         if self.order and self.order.status == bt.Order.Submitted:  # Если заявка не исполнена (отправлена брокеру)
             return  # то ждем исполнения, выходим, дальше не продолжаем
         if not self.position:  # Если позиции нет
@@ -75,7 +74,7 @@ if __name__ == '__main__':  # Точка входа при запуске это
     # schedule = MOEXFutures()  # Расписание торгов срочного рынка
     # noinspection PyArgumentList
     cerebro = bt.Cerebro(stdstats=False, quicknotify=True)  # Инициируем "движок" BackTrader. Стандартная статистика сделок и кривой доходности не нужна. События принимаем без задержек
-    store = FNStore(providers=[dict(provider_name='finam_trade', client_id=Config.ClientIds[0], access_token=Config.AccessToken)])  # Хранилище Finam
+    store = FNStore()  # Хранилище Finam
 
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Формат сообщения
                         datefmt='%d.%m.%Y %H:%M:%S',  # Формат даты
@@ -83,11 +82,11 @@ if __name__ == '__main__':  # Точка входа при запуске это
                         handlers=[logging.FileHandler('LimitCancel.log'), logging.StreamHandler()])  # Лог записываем в файл и выводим на консоль
     logging.Formatter.converter = lambda *args: datetime.now(tz=store.provider.tz_msk).timetuple()  # В логе время указываем по МСК
 
-    broker = store.getbroker(use_positions=False)  # Брокер Finam
+    broker = store.getbroker()  # Брокер Finam
     # noinspection PyArgumentList
     cerebro.setbroker(broker)  # Устанавливаем брокера
     # data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, live_bars=True)  # TODO Ждем от Финама подписку на бары
-    data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, schedule=schedule, live_bars=True)  # Исторические и новые минутные бары за все время по расписанию
+    data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=1, fromdate=datetime.today().date(), account_id=0, schedule=schedule, live_bars=True)  # Исторические и новые минутные бары за все время по расписанию
     # data = store.getdata(dataname=symbol, timeframe=bt.TimeFrame.Minutes, compression=60, schedule=schedule, live_bars=True)  # Исторические и новые часовые бары за все время по расписанию
     # data = store.getdata(dataname=symbol, schedule=schedule, live_bars=True)  # Исторические и новые дневные бары за все время по расписанию
     cerebro.adddata(data)  # Добавляем данные
