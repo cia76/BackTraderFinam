@@ -145,26 +145,27 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             next(reader, None)  # Пропускаем первую строку с заголовками
             for csv_row in reader:  # Последовательно получаем все строки файла
                 bar = dict(datetime=datetime.strptime(csv_row[0], self.dt_format),
-                           open=float(csv_row[1]), high=float(csv_row[2]), low=float(csv_row[3]),
-                           close=float(csv_row[4]),
+                           open=float(csv_row[1]), high=float(csv_row[2]), low=float(csv_row[3]), close=float(csv_row[4]),
                            volume=int(csv_row[5]))  # Бар из файла
                 if self.is_bar_valid(bar):  # Если исторический бар соответствует всем условиям выборки
                     self.history_bars.append(bar)  # то добавляем бар
         if len(self.history_bars) > 0:  # Если были получены бары из файла
             self.logger.debug(f'Получено бар из файла: {len(self.history_bars)} с {self.history_bars[0]["datetime"].strftime(self.dt_format)} по {self.history_bars[-1]["datetime"].strftime(self.dt_format)}')
+        else:  # Бары из файла не получены
+            self.logger.debug('Из файла новых бар не получено')
 
     def get_bars_from_history(self) -> None:
         """Получение бар из истории группами по кол-ву бар и дней"""
         file_history_bars_len = len(self.history_bars)  # Кол-во полученных бар из файла для лога
+        if self.dt_last_open > datetime.min:  # Если в файле были бары
+            last_date = self.dt_last_open  # Дата и время последнего бара из файла по МСК
+            next_bar_open_utc = self.store.provider.msk_to_utc_datetime(last_date + timedelta(minutes=1), True) if self.intraday else \
+                last_date.replace(tzinfo=timezone.utc) + timedelta(days=1)  # Смещаем время на возможный следующий бар по UTC
+        else:  # Если в файле не было баров
+            next_bar_open_utc = datetime(1990, 1, 1, tzinfo=timezone.utc)  # то берем дату, когда никакой тикер еще не торговался
         interval = IntradayCandleInterval(count=500) if self.intraday else DayCandleInterval(count=500)  # Максимальное кол-во бар для истории 500
         td = timedelta(days=(30 if self.intraday else 365))  # Максимальный запрос за 30 дней для внутридневных интервалов и 1 год (365 дней) для дневных и выше
         todate_utc = datetime.utcnow().replace(tzinfo=timezone.utc)  # Будем получать бары до текущей даты и времени UTC
-        if len(self.history_bars) > 0:  # Если были получены бары из файла
-            last_date: datetime = self.history_bars[-1]['datetime']  # Дата и время последнего бара по МСК
-            next_bar_open_utc = self.store.provider.msk_to_utc_datetime(last_date + timedelta(minutes=1), True) if self.intraday else \
-                last_date.replace(tzinfo=timezone.utc) + timedelta(days=1)  # Смещаем время на возможный следующий бар по UTC
-        else:  # Если не были получены бары из файла
-            next_bar_open_utc = datetime(1990, 1, 1, tzinfo=timezone.utc)  # Берем дату, когда никакой тикер еще не торговался
         from_ = getattr(interval, 'from')  # Т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         to_ = getattr(interval, 'to')  # Аналогично будем работать с атрибутом to для единообразия
         first_request = not os.path.isfile(self.file_name)  # Если файл не существует, то первый запрос будем формировать без даты окончания. Так мы в первом запросе получим первые бары истории
@@ -190,7 +191,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                     to_.day = date_to.day
             if first_request:  # Для первого запроса
                 first_request = False  # далее будем ставить в запросы дату окончания интервала
-            self.logger.debug(f'Запрос с {next_bar_open_utc} по {todate_min_utc}')
+            self.logger.debug(f'Получение бар из истории с {next_bar_open_utc} по {todate_min_utc}')
             response = (self.store.provider.get_intraday_candles(self.board, self.symbol, self.finam_timeframe, interval) if self.intraday else
                         self.store.provider.get_day_candles(self.board, self.symbol, self.finam_timeframe, interval))  # Получаем ответ на запрос бар
             if not response:  # Если в ответ ничего не получили
