@@ -146,7 +146,10 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         return next((order for order in self.orders.values() if order.info['transaction_id'] == transaction_id), None)
 
     def create_order(self, owner, data: FNData, size, price=None, plimit=None, exectype=None, valid=None, oco=None, parent=None, transmit=True, simulated=False, is_buy=True, **kwargs):
-        """Создание заявки. Привязка параметров счета и тикера. Обработка связанных и родительской/дочерних заявок"""
+        """Создание заявки. Привязка параметров счета и тикера. Обработка связанных и родительской/дочерних заявок
+        Даполнительные параметры передаются через **kwargs:
+        - account_id - Порядковый номер счета
+        """
         order = BuyOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, simulated=simulated, transmit=transmit) if is_buy \
             else SellOrder(owner=owner, data=data, size=size, price=price, pricelimit=plimit, exectype=exectype, valid=valid, oco=oco, parent=parent, simulated=simulated, transmit=transmit)  # Заявка на покупку/продажу
         order.addcomminfo(self.getcommissioninfo(data))  # По тикеру выставляем комиссии в заявку. Нужно для исполнения заявки в BackTrader
