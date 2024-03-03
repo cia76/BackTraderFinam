@@ -70,7 +70,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             self.put_notification(self.CONNECTED)  # то отправляем уведомление о подключении и начале получения исторических бар
         if self.p.live_bars:  # Если получаем историю и новые бары
             if self.p.schedule:  # Если получаем новые бары по расписанию
-                self.guid = uuid4().hex  # guid расписания
+                self.guid = str(uuid4())  # guid расписания
                 Thread(target=self.stream_bars).start()  # Создаем и запускаем получение новых бар по расписанию в потоке
             else:  # Если получаем новые бары по подписке
                 raise NotImplementedError  # TODO Ждем от Финама подписку на бары
