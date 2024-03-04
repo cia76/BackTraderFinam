@@ -200,6 +200,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
         buy_sell = BUY_SELL_BUY if order.isbuy() else BUY_SELL_SELL  # Покупка/продажа
         si = self.store.provider.get_symbol_info(board, symbol)  # Информация о тикере
         quantity = abs(order.size // si.lot_size)  # Размер позиции в лотах. В Финам всегда передается положительный размер лота
+        self.logger.debug(f'order.size={order.size}, si.lot_size={si.lot_size}, quantity={quantity}')  # Для отладки правильно установленного лота
         response = None  # Результат запроса
         if order.exectype == Order.Market:  # Рыночная заявка
             response = self.store.provider.new_order(client_id, board, symbol, buy_sell, quantity)
