@@ -31,6 +31,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         ('schedule', None),  # Расписание работы биржи
         ('live_bars', False),  # False - только история, True - история и новые бары
     )
+    # datapath = '/home/orangepi/PyAutoTrading/Data/Finam/'  # Путь сохранения файла истории
     datapath = os.path.join('..', '..', 'Data', 'Finam', '')  # Путь сохранения файла истории
     delimiter = '\t'  # Разделитель значений в файле истории. По умолчанию табуляция
     dt_format = '%d.%m.%Y %H:%M'  # Формат представления даты и времени в файле истории. По умолчанию русский формат
