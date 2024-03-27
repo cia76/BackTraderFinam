@@ -31,8 +31,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         ('schedule', None),  # Расписание работы биржи
         ('live_bars', False),  # False - только история, True - история и новые бары
     )
-    # datapath = '/home/orangepi/PyAutoTrading/Data/Finam/'  # Путь сохранения файла истории
-    datapath = os.path.join('..', '..', 'Data', 'Finam', '')  # Путь сохранения файла истории
+    datapath = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'Data', 'Finam', '')  # Путь сохранения файла истории
     delimiter = '\t'  # Разделитель значений в файле истории. По умолчанию табуляция
     dt_format = '%d.%m.%Y %H:%M'  # Формат представления даты и времени в файле истории. По умолчанию русский формат
 
@@ -214,10 +213,10 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                                high=self.store.provider.dict_decimal_to_float(new_bar['high']),
                                low=self.store.provider.dict_decimal_to_float(new_bar['low']),
                                close=self.store.provider.dict_decimal_to_float(new_bar['close']),
-                               volume=new_bar['volume'])
+                               volume=new_bar['volume'])  # Бар из истории
+                    self.save_bar_to_file(bar)  # Сохраняем бар в файл
                     if self.is_bar_valid(bar):  # Если исторический бар соответствует всем условиям выборки
                         self.history_bars.append(bar)  # то добавляем бар
-                        self.save_bar_to_file(bar)  # и сохраняем его в файл
                 last_bar_open_utc = self.store.provider.msk_to_utc_datetime(last_bar_open_dt, True) if self.intraday else \
                     last_bar_open_dt.replace(tzinfo=timezone.utc)  # Дата и время открытия последнего бара UTC
                 next_bar_open_utc = last_bar_open_utc + timedelta(minutes=1) if self.intraday else last_bar_open_utc + timedelta(days=1)  # Смещаем время на возможный следующий бар UTC
