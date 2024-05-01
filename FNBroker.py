@@ -9,10 +9,10 @@ from backtrader.utils.py3 import with_metaclass
 
 from BackTraderFinam import FNStore, FNData
 
-from FinamPy.proto.tradeapi.v1.common_pb2 import BUY_SELL_BUY, BUY_SELL_SELL, OrderValidBefore, OrderValidBeforeType
-from FinamPy.proto.tradeapi.v1.orders_pb2 import OrderStatus
-from FinamPy.proto.tradeapi.v1.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits
-from FinamPy.proto.tradeapi.v1.events_pb2 import OrderEvent, PortfolioEvent
+from FinamPy.proto.common_pb2 import BUY_SELL_BUY, BUY_SELL_SELL, OrderValidBefore, OrderValidBeforeType
+from FinamPy.proto.orders_pb2 import OrderStatus
+from FinamPy.proto.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits
+from FinamPy.proto.events_pb2 import OrderEvent, PortfolioEvent
 
 
 # noinspection PyArgumentList

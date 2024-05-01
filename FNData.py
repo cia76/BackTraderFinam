@@ -11,8 +11,8 @@ from backtrader import TimeFrame, date2num
 
 from BackTraderFinam import FNStore
 
-from FinamPy.proto.tradeapi.v1.candles_pb2 import DayCandleTimeFrame, DayCandleInterval, IntradayCandleTimeFrame, IntradayCandleInterval
-from google.type.date_pb2 import Date
+from FinamPy.proto.candles_pb2 import DayCandleTimeFrame, DayCandleInterval, IntradayCandleTimeFrame, IntradayCandleInterval
+from FinamPy.proto.google.type.date_pb2 import Date
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.json_format import MessageToDict
 
@@ -198,7 +198,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
                 self.logger.warning('Ошибка запроса бар из истории')
                 return  # то выходим, дальше не продолжаем
             else:  # Если в ответ пришли бары
-                response_dict = MessageToDict(response, including_default_value_fields=True)  # Переводим в словарь из JSON
+                response_dict = MessageToDict(response, always_print_fields_with_no_presence=True)  # Переводим в словарь из JSON
                 if 'candles' not in response_dict:  # Если бар нет в словаре
                     self.logger.error(f'Бар (candles) нет в словаре {response_dict}')
                     return  # то выходим, дальше не продолжаем
@@ -259,7 +259,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             if not response:  # Если в ответ ничего не получили
                 self.logger.warning('Ошибка запроса бар из истории по расписанию')
                 continue  # то будем получать следующий бар
-            response_dict = MessageToDict(response, including_default_value_fields=True)  # Получаем бары, переводим в словарь/список
+            response_dict = MessageToDict(response, always_print_fields_with_no_presence=True)  # Получаем бары, переводим в словарь/список
             if 'candles' not in response_dict:  # Если бар нет в словаре
                 self.logger.warning(f'Бар (candles) нет в истории по расписанию {response_dict}')
                 continue  # то будем получать следующий бар
