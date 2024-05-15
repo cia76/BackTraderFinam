@@ -85,13 +85,13 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
 
     def buy(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, tradeid=0, oco=None, trailamount=None, trailpercent=None, parent=None, transmit=True, **kwargs):
         """Заявка на покупку"""
-        order = self.create_order(owner, data, size, price, plimit, exectype, valid, oco, parent, transmit, True, **kwargs)
+        order = self.create_order(owner, data, size, price, plimit, exectype, valid, oco, parent, transmit, is_buy=True, **kwargs)
         self.notifs.append(order.clone())  # Уведомляем брокера о принятии/отклонении заявки на бирже
         return order
 
     def sell(self, owner, data, size, price=None, plimit=None, exectype=None, valid=None, tradeid=0, oco=None, trailamount=None, trailpercent=None, parent=None, transmit=True, **kwargs):
         """Заявка на продажу"""
-        order = self.create_order(owner, data, size, price, plimit, exectype, valid, oco, parent, transmit, False, **kwargs)
+        order = self.create_order(owner, data, size, price, plimit, exectype, valid, oco, parent, transmit, is_buy=False, **kwargs)
         self.notifs.append(order.clone())  # Уведомляем брокера о принятии/отклонении заявки на бирже
         return order
 
