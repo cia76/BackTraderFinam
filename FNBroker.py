@@ -27,9 +27,9 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
     """Брокер Финам"""
     logger = logging.getLogger('FNBroker')  # Будем вести лог
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         super(FNBroker, self).__init__()
-        self.store = FNStore()  # Хранилище Финам
+        self.store = FNStore(**kwargs)  # Хранилище Финам
         self.notifs = collections.deque()  # Очередь уведомлений брокера о заявках
         self.startingcash = self.cash = 0  # Стартовые и текущие свободные средства по счету
         self.startingvalue = self.value = 0  # Стартовая и текущая стоимость позиций
