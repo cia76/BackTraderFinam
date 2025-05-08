@@ -4,7 +4,7 @@ import logging
 from backtrader.metabase import MetaParams
 from backtrader.utils.py3 import with_metaclass
 
-from FinamPy import FinamPy
+from FinamPy import FinamPyOld
 
 
 class MetaSingleton(MetaParams):
@@ -38,7 +38,7 @@ class FNStore(with_metaclass(MetaSingleton, object)):
         """Возвращает новый экземпляр класса брокера с заданными параметрами"""
         return cls.BrokerCls(*args, **kwargs)
 
-    def __init__(self, provider=FinamPy()):
+    def __init__(self, provider=FinamPyOld()):
         super(FNStore, self).__init__()
         self.notifs = deque()  # Уведомления хранилища
         self.provider = provider  # Подключаемся ко всем торговым счетам

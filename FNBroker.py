@@ -9,10 +9,10 @@ from backtrader.utils.py3 import with_metaclass
 
 from BackTraderFinam import FNStore, FNData
 
-from FinamPy.proto.common_pb2 import BUY_SELL_BUY, BUY_SELL_SELL, OrderValidBefore, OrderValidBeforeType
-from FinamPy.proto.orders_pb2 import OrderStatus
-from FinamPy.proto.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits
-from FinamPy.proto.events_pb2 import OrderEvent, PortfolioEvent
+from FinamPy.proto_old.common_pb2 import BUY_SELL_BUY, BUY_SELL_SELL, OrderValidBefore, OrderValidBeforeType
+from FinamPy.proto_old.orders_pb2 import OrderStatus
+from FinamPy.proto_old.stops_pb2 import StopLoss, StopQuantity, StopQuantityUnits
+from FinamPy.proto_old.events_pb2 import OrderEvent, PortfolioEvent
 
 
 # noinspection PyArgumentList
@@ -238,7 +238,7 @@ class FNBroker(with_metaclass(MetaFNBroker, BrokerBase)):
     def cancel_order(self, order):
         """Отмена заявки"""
         if not order.alive():  # Если заявка уже была завершена
-            return  # то выходим, дальше не продолжаем
+            return None  # то выходим, дальше не продолжаем
         client_id = order.info['client_id']  # Торговый счет
         if order.exectype in (Order.Market, Order.Limit):  # Для рыночной и лимитной заявки
             self.store.provider.cancel_order(client_id, order.info['transaction_id'])  # Отмена активной заявки
