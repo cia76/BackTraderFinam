@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta, time
+from datetime import datetime, timezone, timedelta, time, UTC
 from time import sleep
 from uuid import uuid4  # Номера расписаний должны быть уникальными во времени и пространстве
 from threading import Thread, Event  # Поток и событие остановки потока получения новых бар по расписанию биржи
@@ -12,8 +12,8 @@ from backtrader import TimeFrame, date2num
 
 from BackTraderFinam import FNStore
 
-from FinamPy.proto.candles_pb2 import DayCandleTimeFrame, DayCandleInterval, IntradayCandleTimeFrame, IntradayCandleInterval
-from FinamPy.proto.google.type.date_pb2 import Date
+from FinamPy.proto_old.candles_pb2 import DayCandleTimeFrame, DayCandleInterval, IntradayCandleTimeFrame, IntradayCandleInterval
+from google.type.date_pb2 import Date
 from google.protobuf.timestamp_pb2 import Timestamp
 from google.protobuf.json_format import MessageToDict
 
@@ -44,7 +44,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
     def __init__(self):
         self.store = FNStore()  # Хранилище Финам
         self.intraday = self.p.timeframe == TimeFrame.Minutes  # Внутридневной временной интервал
-        self.board, self.symbol = self.store.provider.dataname_to_board_symbol(self.p.dataname)  # По тикеру получаем код режима торгов и тикера
+        self.board, self.symbol = self.store.provider.dataname_to_finam_board_symbol(self.p.dataname)  # По тикеру получаем код режима торгов и тикера
         self.client_id = self.store.provider.client_ids[self.p.account_id]  # Счет тикера
         self.finam_timeframe = self.bt_timeframe_to_finam_timeframe(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader в Финам
         self.tf = self.bt_timeframe_to_tf(self.p.timeframe, self.p.compression)  # Конвертируем временной интервал из BackTrader для имени файла истории и расписания
@@ -165,7 +165,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             next_bar_open_utc = datetime(1990, 1, 1, tzinfo=timezone.utc)  # то берем дату, когда никакой тикер еще не торговался
         interval = IntradayCandleInterval(count=500) if self.intraday else DayCandleInterval(count=500)  # Максимальное кол-во бар для истории 500
         td = timedelta(days=(30 if self.intraday else 365))  # Максимальный запрос за 30 дней для внутридневных интервалов и 1 год (365 дней) для дневных и выше
-        todate_utc = datetime.utcnow().replace(tzinfo=timezone.utc)  # Будем получать бары до текущей даты и времени UTC
+        todate_utc = datetime.now(UTC)  # Будем получать бары до текущей даты и времени UTC
         from_ = getattr(interval, 'from')  # Т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         to_ = getattr(interval, 'to')  # Аналогично будем работать с атрибутом to для единообразия
         first_request = not os.path.isfile(self.file_name)  # Если файл не существует, то первый запрос будем формировать без даты окончания. Так мы в первом запросе получим первые бары истории
@@ -264,7 +264,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
         interval = IntradayCandleInterval(count=1) if self.intraday else DayCandleInterval(count=1)  # Принимаем последний завершенный бар
         from_ = getattr(interval, 'from')  # т.к. from - ключевое слово в Python, то получаем атрибут from из атрибута интервала
         while True:
-            market_datetime_now = self.p.schedule.utc_to_msk_datetime(datetime.utcnow())  # Текущее время на бирже
+            market_datetime_now = self.p.schedule.utc_to_msk_datetime(datetime.now(UTC))  # Текущее время на бирже
             trade_bar_open_datetime = self.p.schedule.trade_bar_open_datetime(market_datetime_now, self.tf)  # Дата и время открытия бара, который будем получать
             trade_bar_request_datetime = self.p.schedule.trade_bar_request_datetime(market_datetime_now, self.tf)  # Дата и время запроса бара на бирже
             sleep_time_secs = (trade_bar_request_datetime - market_datetime_now).total_seconds()  # Время ожидания в секундах
@@ -380,6 +380,7 @@ class FNData(with_metaclass(MetaFNData, AbstractDataBase)):
             return dt_open + timedelta(minutes=self.p.compression * period)  # Время закрытия бара
         elif self.p.timeframe == TimeFrame.Seconds:  # Секундный временной интервал
             return dt_open + timedelta(seconds=self.p.compression * period)  # Время закрытия бара
+        raise NotImplementedError  # С остальными временнЫми интервалами не работаем
 
     def get_finam_date_time_now(self) -> datetime:
         """Текущая дата и время МСК"""
